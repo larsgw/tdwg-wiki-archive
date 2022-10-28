@@ -56,7 +56,7 @@ async function main (input) {
         console.error(filePath)
         let file = await readFile(path.join(input, filePath))
 
-        const outputDir = path.join(__dirname, 'output', path.dirname(filePath))
+        const outputDir = path.join('output', path.dirname(filePath))
         const outputPath = path.join(outputDir, path.basename(filePath, '.txt') + '.html')
 
         const context = {
