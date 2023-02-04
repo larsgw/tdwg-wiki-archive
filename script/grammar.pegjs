@@ -13,6 +13,12 @@
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
     }
+    function makeAutoLink (href) {
+        if (/\.(jpe?g|png|gif)$/.test(href)) {
+            return `<a href="${href}"><img src="${href}"/></a>`
+        }
+        return `<a href="${href}">${href}</a>`
+    }
     var autolink = true
     var indentLevel = 1
 }
@@ -146,7 +152,7 @@ NoAutolink
     / '</noautolink>' { autolink = true; return '' }
 
 Verbatim
-    = '<verbatim>' content:$([^<]+ / !'</verbatim>' .)+ '</verbatim>' {
+    = '<verbatim>' '\n'? content:$([^<]+ / !'</verbatim>' .)+ '</verbatim>' {
         return `<pre><code>${escapeHtml(content)}</code></pre>`
     }
 
@@ -162,13 +168,12 @@ EscapedLink
     = '!' text:$Link { return text }
 
 Link
-    = &{ return autolink } link:WikiWordLink { return `<a href="${link.href}">${link.label}</a>` }
-    / href:$(LinkProtocol '://' [^\r\n ]+) {
-        if (/\.(jpe?g|png|gif)$/.test(href)) {
-            return `<a href="${href}"><img src="${href}"/></a>`
-        }
-        return `<a href="${href}">${href}</a>`
+    = &{ return autolink } link:SafeWikiWordLink path:$('/' [^\r\n ]+) {
+        const href = link.href.slice(0, -5) + path
+        return makeAutoLink(href)
     }
+    / &{ return autolink } link:SafeWikiWordLink { return `<a href="${link.href}">${link.label}</a>` }
+    / href:$(LinkProtocol '://' [^\r\n ]+) { return makeAutoLink(href) }
     / '[[' link:ForcedLink ']]' { return `<a href="${link.href}">${link.label}</a>` }
     / '[[' link:ForcedLink '][' label:LinkLabel ']]' { return `<a href="${link.href}">${label}</a>` }
     / '@' handle:$[A-Z]i+ { return `<a href="https://twitter.com/${handle}">@${handle}</a>` }
@@ -182,6 +187,14 @@ Link
 ForcedLink
     = link:WikiWordLink suffix:$([#?/] [^\]]*)? { return { href: link.href + suffix, label: link.label + suffix } }
     / href:$((!'. ' [^\r\n\] ])+) { return { href, label: href } }
+
+SafeWikiWordLink
+    = &(
+        link:WikiWordLink
+        &{ return options.links.includes(link.href) }
+    ) link:WikiWordLink {
+        return link
+    }
 
 WikiWordLink
     = link:WikiWordPathStart {

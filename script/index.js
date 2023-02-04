@@ -32,13 +32,28 @@ async function getTwikiParser () {
 
 const UNUSED_VARS = {}
 
-function getTwikiVariable (variable, context) {
+function getTwikiParameters (list = '') {
+    const parameters = {}
+    for (const [, key, value] of list.matchAll(/([a-z]+)="([^"]*)"(?: |$)/g)) {
+        parameters[key] = value
+    }
+    return parameters
+}
+
+function getTwikiVariable (variable, parameters, context) {
+    parameters = getTwikiParameters(parameters)
+
     if (variable === 'ATTACHURL' || variable === 'ATTACHURLPATH') {
         return context.TOPIC
     } else if (variable === 'TOPIC') {
         return context.TOPIC
+    } else if (variable === 'META:TOPICINFO') {
+        const date = new Date(parameters.date * 1000)
+        return `${parameters.author} - ${date.toDateString()} - Version ${parameters.version}<br>`
+    } else if (variable === 'META:TOPICPARENT') {
+        return `[[${parameters.name}][Parent topic: ${parameters.name}]]<br>`
     }
-    variable = variable.split(/(?<=\{)/)[0].replace(/\{$/, '{}')
+
     UNUSED_VARS[variable] = (UNUSED_VARS[variable] || 0) + 1
     return ''
 }
@@ -46,6 +61,11 @@ function getTwikiVariable (variable, context) {
 async function main (input) {
     const parser = await getTwikiParser()
     const files = await listRecursive(input)
+
+    const links = files.map(filePath => path.join(
+        path.dirname(filePath),
+        path.basename(filePath, '.txt') + '.html'
+    ))
 
     for (const filePath of files) {
         if (['TAPIR/ThirdProposal.txt'].includes(filePath) || filePath.startsWith('TWiki/') || filePath.startsWith('tmp/')) {
@@ -63,15 +83,21 @@ async function main (input) {
             ATTACHURL: path.join(path.dirname(filePath), path.basename(filePath, '.txt')),
             TOPIC: path.basename(filePath, '.txt')
         }
+        const options = {
+            context,
+            links: files
+                .filter(siblingPath => path.dirname(filePath) === path.dirname(siblingPath))
+                .map(siblingPath => path.basename(siblingPath, '.txt') + '.html')
+                .concat(links)
+        }
 
         file = file
-            .replace(/%([A-Z:_]+)%/g, (_, variable) => getTwikiVariable(variable, context))
-            .replace(/%([A-Z:_]+\{.+?\})%/g, (_, variable) => getTwikiVariable(variable, context))
+            .replace(/%([A-Z:_]+)(?:\{(.+?)\})?%/g, (_, variable, parameters) => getTwikiVariable(variable, parameters, context))
             .replace(/http:\/\/wiki\.tdwg\.org\/twiki\/bin\/view\/SDD/g, '..')
             .replace(/(?!<\\)\\\n/g, '')
 
         try {
-            const html = parser.parse(file, { context })
+            const html = parser.parse(file, options)
             await fs.mkdir(outputDir, { recursive: true })
             fs.writeFile(outputPath, `<html>
             <head>
